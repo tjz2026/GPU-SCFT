@@ -28,10 +28,14 @@ extern void init_cuda(GPU_INFO *gpu_info,int display){
 	for(i=0;i<(gpu_info->GPU_N);i++) {
 		gpu_info->GPU_list[i]=i;}	//!Define on these GPU to calculate 
 
-	
+	int dev_indx[gpu_info->GPU_N];
+        // user defined GPU device index, check which GPU to use by type "nvidia-smi"
+        assert(gpu_info->GPU_N==1);
+        dev_indx[0]=1;
+
 	for (i=0; i < gpu_info->GPU_N; i++){
 		
-        	checkCudaErrors(cudaGetDeviceProperties(&gpu_info->prop[i], i)); // get the device properties for the specified device number i
+        	checkCudaErrors(cudaGetDeviceProperties(&gpu_info->prop[i], dev_indx[i])); // get the device properties for the specified device number i
 		
 		checkCudaErrors(cudaSetDevice(gpu_info->GPU_list[i])); // cuda runtime API, thread-safe, to select which GPU to execute CUDA calls on
 		
@@ -165,6 +169,100 @@ extern void initialize_cufft(GPU_INFO *gpu_info,CUFFT_INFO *cufft_info){
 }
 
 
+extern void init_chain_chemical(GPU_INFO *gpu_info,GRID *grid,CELL *cell,CHEMICAL *chemical,CHAIN *chain) {
+        double *kx,*ky,*kz;  
+        double dx,dy,dz,ksq;
+        int Nx,Ny,Nz,i,j,k;
+        long NxNyNz,ijk;
+        Nx=grid->Nx;   
+        Ny=grid->Ny;   
+        Nz=grid->Nz;   
+        NxNyNz=Nx*Nx*Nz;   
+	kx=(double *)malloc(sizeof(double)*Nx);
+	ky=(double *)malloc(sizeof(double)*Ny);
+	kz=(double *)malloc(sizeof(double)*Nz);
+	dx=cell->dx;
+	dy=cell->dy;
+	dz=cell->dz;
+	
+	chain->exp_ksq=(double *)malloc(sizeof(double)*NxNyNz);	
+	chemical->exp_w=(double *)malloc(sizeof(double)*NxNyNz*chemical->N_spe);	
+	for(i=0;i<=Nx/2-1;i++) kx[i]=2*Pi*i*1.0/Nx/dx;
+	for(i=Nx/2;i<Nx;i++)   kx[i]=2*Pi*(i-Nx)*1.0/dx/Nx;
+	for(i=0;i<Nx;i++)      kx[i]*=kx[i];
+
+	for(i=0;i<=Ny/2-1;i++) ky[i]=2*Pi*i*1.0/Ny/dy;
+	for(i=Ny/2;i<Ny;i++)   ky[i]=2*Pi*(i-Ny)*1.0/dy/Ny;
+	for(i=0;i<Ny;i++)      ky[i]*=ky[i];
+
+	for(i=0;i<=Nz/2-1;i++) kz[i]=2*Pi*i*1.0/Nz/dz;
+	for(i=Nz/2;i<Nz;i++)   kz[i]=2*Pi*(i-Nz)*1.0/dz/Nz;
+	for(i=0;i<Nz;i++)      kz[i]*=kz[i];
+	double ds;
+        ds=1.0/chain->Ns;
+	for(k=0;k<Nz;k++) {
+	   for(j=0;j<Ny;j++){
+	      for(i=0;i<Nx;i++){
+		ijk=(long)((k*Ny+j)*Nx+i);// x is the fastest dimension!!
+		ksq=kx[i]+ky[j]+kz[k];
+		chain->exp_ksq[ijk]=exp(-ds*ksq);
+	                       }
+                             }
+                           }
+	
+	checkCudaErrors(cudaMallocManaged(&chain->exp_ksq_cu, sizeof(double)* NxNyNz));
+	checkCudaErrors(cudaMallocManaged(&chemical->exp_w_cu, sizeof(double)* NxNyNz*chemical->N_spe));
+	
+	checkCudaErrors(cudaMemcpy(chain->exp_ksq_cu, chain->exp_ksq,sizeof(double)*NxNyNz,cudaMemcpyHostToDevice));
+
+    checkCudaErrors(cudaDeviceSynchronize());
+
+    cudaEvent_t start, stop;
+    float time;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+     
+
+    // allocate chemical fields and density profile on CPU
+    chemical->W_sp=dmatrix(0,chemical->N_spe-1,0,chemical->Nxyz-1);
+    chemical->R_sp=dmatrix(0,chemical->N_spe-1,0,chemical->Nxyz-1);
+    // propagators are allocated on GPU gobal memeory
+    cudaEventRecord(start, 0);
+    checkCudaErrors(cudaMallocManaged(&chain->qf, sizeof(double)* chain->Nxyz*chain->Ns));
+    checkCudaErrors(cudaMallocManaged(&chain->qb, sizeof(double)* chain->Nxyz*chain->Ns));
+
+    checkCudaErrors(cudaDeviceSynchronize());
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(stop);
+    cudaEventElapsedTime(&time, start, stop);
+    printf ("Time for the kernel: %f ms\n", time);
+
+}
+
+extern void field_cp_gpu(GRID *grid,CHEMICAL *chemical,CHAIN *chain) {
+     int Nx,Ny,Nz,i,j,k,spe;
+     long ijk;
+     Nx=grid->Nx;   
+     Ny=grid->Ny;   
+     Nz=grid->Nz;   
+     double ds;
+     ds=1.0/chain->Ns;
+      for (spe=0;spe<chemical->N_spe;spe++) {
+	for(k=0;k<Nz;k++) {
+	   for(j=0;j<Ny;j++){
+	      for(i=0;i<Nx;i++){
+		ijk=(long)((k*Ny+j)*Nx+i+ spe*chemical->Nxyz );// x is the fastest dimension!!
+		chemical->exp_w[ijk]=exp(-0.5*ds*chemical->W_sp[spe][ijk]);
+	                       }
+                             }
+                           }
+	                 }
+
+    checkCudaErrors(cudaMemcpy(chemical->exp_w_cu, chemical->exp_w,sizeof(double)*chemical->Nxyz*chemical->N_spe,cudaMemcpyHostToDevice));
+    checkCudaErrors(cudaDeviceSynchronize());
+
+}
+
 extern void test_cufft(GPU_INFO *gpu_info,CUFFT_INFO *cufft_info){
        double *h_in;
        double complex *h_out;
@@ -229,8 +327,6 @@ extern void finalize_cufft(GPU_INFO *gpu_info,CUFFT_INFO *cufft_info){
 		cudaDeviceSynchronize();
 	
 	}
-	
-	
 	
 	//! free memery on CPU
 	

@@ -7,8 +7,9 @@
 #include <helper_functions.h>
 
 #include <vector>
+#include "matrix.h"
 //Header stuff here
-#define Pi 3.1415926535
+#define Pi 3.14159265358979
 
 #ifndef TAUCS_H
 #define TAUCS_H
@@ -83,6 +84,36 @@ typedef struct {
 	double dz;
 
 } CELL;
+
+
+typedef struct {
+     int N_spe; // how many species 
+     double XN[3][3]; //the matrix of flory-huggins interaction parameters
+     double **W_sp;   // chemical potential of each chemical species
+     double **R_sp;   // density of each chemical species
+     long Nxyz; // total grid points of real space
+     double *exp_w,*exp_w_cu; // exp(-0.5*ds*W(x,y,z))
+} CHEMICAL;
+
+typedef struct {
+      int N_blk; //how many blocks in a chain
+      int Ns;    // discretization of contour variable s over 1
+      int *Blk_spe; // block species index, i.e.  identify species index for each block 
+      int *Blk_start; // starting index of s for each block
+      int *Blk_end;  // ending index of s for each block
+      double *Blk_f; //length fraction of each block 
+      long Nxyz; // total grid points of real space
+      double *qf;  // forward propagator       
+      double *qb;
+      double Q; // single chain partition function
+      double *exp_ksq,*exp_ksq_cu; // exp(-ds*(kx^2+ky^2+kz^2)), on CPU and GPU
+} CHAIN;
+
+
+//extern CHEMICAL AB_melt;
+//extern CHAIN diblock;
+
+
 
 
 #endif //TAUCS_H

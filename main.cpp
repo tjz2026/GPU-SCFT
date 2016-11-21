@@ -25,18 +25,21 @@
 #include "init.h"
 
 #include <ctime>
+
 // z dimension must be larger than Nz/GPU_N>=8
 // CUDA runtime
 
 int main(void){
 
-	
+	// declare user defined structures 
 	GPU_INFO gpu_info;
         GRID grid;   
         CELL cell;   
 	CUFFT_INFO cufft_info;
-
-	init_grid_cell(&cufft_info,&gpu_info,&grid,&cell);
+        CHEMICAL AB_melts;
+        CHAIN diblock;
+	//init_grid_cell(&cufft_info,&gpu_info,&grid,&cell);
+        AB_diblock_scft_driver(&cufft_info,&gpu_info,&grid, &cell, &AB_melts, &diblock);
 	
 //	fft_test(&gpu_info,&cufft_info);
 
