@@ -98,15 +98,6 @@ void init_AB_diblock_scft(CUFFT_INFO *cufft_info,GPU_INFO *gpu_info,GRID *grid, 
 }
 
 
-void AB_diblock_scft_driver(CUFFT_INFO *cufft_info,GPU_INFO *gpu_info,GRID *grid, CELL *cell, CHEMICAL *chemical, CHAIN *chain ){
-//   build the grid info and cufft info, allocate the memeory for scft arrays on both cpu and gpu
-     init_AB_diblock_scft(cufft_info,gpu_info,grid, cell, chemical, chain);
-// fill the fields with selected type, in this case, hexagonal is tested.
-
-
-
-
-}
 
 
 
